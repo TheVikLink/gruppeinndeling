@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elevpar-generator</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #17212b;
+      --muted: #5b6875;
+      --accent: #1f6feb;
+      --accent-dark: #1557b0;
+      --border: #d8e0ea;
+      --shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }
+    .subtitle {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      padding: 14px;
+      font-size: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+    }
+    button:hover { background: var(--accent-dark); }
+    button.secondary {
+      background: #e7eef8;
+      color: #17355c;
+    }
+    button.secondary:hover {
+      background: #d7e5f7;
+    }
+    .status {
+      margin-top: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #0f5132;
+    }
+    .round-info {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 18px;
+    }
+    .groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+    }
+    .group-card {
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      border: 2px solid #bfd4f6;
+      border-radius: 18px;
+      padding: 18px;
+      min-height: 140px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      box-shadow: 0 6px 16px rgba(31,111,235,0.08);
+    }
+    .group-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #184b8a;
+      margin-bottom: 14px;
+    }
+    .group-members {
+      font-size: 1.8rem;
+      font-weight: 800;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    .small-note {
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .warning {
+      color: #8a3b12;
+      font-weight: 700;
+      margin-top: 12px;
+    }
+    @media (max-width: 700px) {
+      .group-members { font-size: 1.45rem; }
+      h1 { font-size: 1.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Elevpar-generator</h1>
+    <p class="subtitle">
+      Skriv inn ett elevnavn per linje. Trykk på <strong>Lagre navn</strong>, og deretter <strong>Nye grupper</strong>.
+      Siden lager par uten gjentakelser så lenge det er mulig. Navn lagres i cookies, og runden lagres lokalt i nettleseren.
+    </p>
+
+    <div class="panel">
+      <label for="namesInput">Elevnavn, ett navn per linje</label>
+      <textarea id="namesInput" placeholder="Ola&#10;Kari&#10;Ali&#10;Emma"></textarea>
+
+      <div class="button-row">
+        <button id="saveBtn" type="button">Lagre navn</button>
+        <button id="newGroupsBtn" type="button">Nye grupper</button>
+        <button id="resetRoundsBtn" class="secondary" type="button">Start runder på nytt</button>
+        <button id="clearBtn" class="secondary" type="button">Tøm alt</button>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div id="warning" class="warning"></div>
+      <div class="small-note">
+        Ved oddetall elever blir det én gruppe på 3 i hver runde, slik at alle får en gruppe.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div id="roundInfo" class="round-info">Ingen grupper laget ennå.</div>
+      <div id="groups" class="groups"></div>
+    </div>
+  </div>
+
+  <script>
+    const COOKIE_NAMES = "elevpar_names";
+    const STORAGE_META = "elevpar_meta_v3";
+
+    const namesInput = document.getElementById("namesInput");
+    const saveBtn = document.getElementById("saveBtn");
+    const newGroupsBtn = document.getElementById("newGroupsBtn");
+    const resetRoundsBtn = document.getElementById("resetRoundsBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const statusEl = document.getElementById("status");
+    const warningEl = document.getElementById("warning");
+    const roundInfoEl = document.getElementById("roundInfo");
+    const groupsEl = document.getElementById("groups");
+
+    function setCookie(name, value, days = 365) {
+      const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+      document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+    }
+
+    function getCookie(name) {
+      const prefix = name + "=";
+      const cookies = document.cookie.split(";").map(c => c.trim());
+      for (const cookie of cookies) {
+        if (cookie.startsWith(prefix)) {
+          return decodeURIComponent(cookie.substring(prefix.length));
+        }
+      }
+      return null;
+    }
+
+    function deleteCookie(name) {
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
+    }
+
+    function cleanNames(raw) {
+      return raw
+        .split(/\r?\n/)
+        .map(n => n.trim())
+        .filter(Boolean)
+        .filter((name, index, arr) => arr.indexOf(name) === index);
+    }
+
+    function saveNames(names) {
+      setCookie(COOKIE_NAMES, JSON.stringify(names));
+    }
+
+    function loadNames() {
+      try {
+        const raw = getCookie(COOKIE_NAMES);
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveMeta(meta) {
+      try {
+        localStorage.setItem(STORAGE_META, JSON.stringify(meta));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function loadMeta() {
+      try {
+        const raw = localStorage.getItem(STORAGE_META);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function resetMeta() {
+      try {
+        localStorage.removeItem(STORAGE_META);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function rotateArray(arr) {
+      if (arr.length <= 2) return arr.slice();
+      const fixed = arr[0];
+      const rest = arr.slice(1);
+      rest.unshift(rest.pop());
+      return [fixed, ...rest];
+    }
+
+    function buildAllRounds(names) {
+      let players = [...names];
+      const odd = players.length % 2 === 1;
+      const BYE = "__BYE__";
+
+      if (odd) players.push(BYE);
+
+      const total = players.length;
+      const rounds = total - 1;
+      let current = players.slice();
+      const roundList = [];
+
+      for (let r = 0; r < rounds; r++) {
+        const pairs = [];
+        for (let i = 0; i < total / 2; i++) {
+          pairs.push([current[i], current[total - 1 - i]]);
+        }
+        roundList.push(pairs);
+        current = rotateArray(current);
+      }
+
+      if (!odd) {
+        return roundList.map(pairs => pairs.map(pair => pair.filter(n => n !== BYE)));
+      }
+
+      return roundList.map(pairs => {
+        let byePerson = null;
+        const realPairs = [];
+
+        for (const pair of pairs) {
+          if (pair.includes(BYE)) {
+            byePerson = pair.find(n => n !== BYE);
+          } else {
+            realPairs.push(pair);
+          }
+        }
+
+        if (byePerson && realPairs.length > 0) {
+          return [[...realPairs[0], byePerson], ...realPairs.slice(1)];
+        }
+
+        return realPairs;
+      });
+    }
+
+    function sameNames(a, b) {
+      if (!Array.isArray(a) || !Array.isArray(b)) return false;
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    }
+
+    function renderGroups(groups, roundNumber, totalRounds) {
+      groupsEl.innerHTML = "";
+      roundInfoEl.textContent = `Runde ${roundNumber} av ${totalRounds}`;
+      warningEl.textContent = "";
+
+      groups.forEach((group, index) => {
+        const card = document.createElement("div");
+        card.className = "group-card";
+
+        const title = document.createElement("div");
+        title.className = "group-title";
+        title.textContent = group.length === 2 ? `Par ${index + 1}` : `Gruppe ${index + 1}`;
+
+        const members = document.createElement("div");
+        members.className = "group-members";
+        members.textContent = group.join(" + ");
+
+        card.appendChild(title);
+        card.appendChild(members);
+        groupsEl.appendChild(card);
+      });
+    }
+
+    function showStatus(message, isWarning = false) {
+      statusEl.textContent = message;
+      statusEl.style.color = isWarning ? "#8a3b12" : "#0f5132";
+    }
+
+    function initializeFromStorage() {
+      const names = loadNames();
+      if (names.length) {
+        namesInput.value = names.join("\n");
+      }
+
+      const meta = loadMeta();
+      if (names.length && meta && typeof meta.currentRoundIndex === "number" && meta.currentRoundIndex >= 0) {
+        const rounds = buildAllRounds(names);
+        if (meta.currentRoundIndex < rounds.length) {
+          renderGroups(rounds[meta.currentRoundIndex], meta.currentRoundIndex + 1, rounds.length);
+          showStatus("Tidligere lagrede grupper er hentet inn.");
+        }
+      }
+    }
+
+    saveBtn.addEventListener("click", () => {
+      const names = cleanNames(namesInput.value);
+
+      if (names.length < 2) {
+        showStatus("Du må legge inn minst to elevnavn.", true);
+        return;
+      }
+
+      namesInput.value = names.join("\n");
+      saveNames(names);
+      resetMeta();
+      groupsEl.innerHTML = "";
+      roundInfoEl.textContent = "Navn lagret. Klar for nye grupper.";
+      warningEl.textContent = "";
+      showStatus(`Lagret ${names.length} elevnavn.`);
+    });
+
+    newGroupsBtn.addEventListener("click", () => {
+      const names = cleanNames(namesInput.value);
+
+      if (names.length < 2) {
+        showStatus("Du må legge inn minst to elevnavn.", true);
+        return;
+      }
+
+      saveNames(names);
+
+      const rounds = buildAllRounds(names);
+      let meta = loadMeta();
+
+      if (!meta || !sameNames(meta.names, names)) {
+        meta = { names, currentRoundIndex: -1 };
+      }
+
+      const nextIndex = meta.currentRoundIndex + 1;
+
+      if (nextIndex >= rounds.length) {
+        warningEl.textContent = "Alle unike runder er brukt opp. Trykk «Start runder på nytt» for å begynne fra start.";
+        showStatus("Ingen flere nye kombinasjoner uten gjentakelser.", true);
+        return;
+      }
+
+      meta.currentRoundIndex = nextIndex;
+      meta.names = names;
+      saveMeta(meta);
+
+      renderGroups(rounds[nextIndex], nextIndex + 1, rounds.length);
+      showStatus("Nye grupper er laget.");
+    });
+
+    resetRoundsBtn.addEventListener("click", () => {
+      const names = cleanNames(namesInput.value);
+      if (names.length >= 2) {
+        saveNames(names);
+      }
+      resetMeta();
+      groupsEl.innerHTML = "";
+      roundInfoEl.textContent = "Rundene er nullstilt. Trykk «Nye grupper» for å starte på nytt.";
+      warningEl.textContent = "";
+      showStatus("Rundene er startet på nytt.");
+    });
+
+    clearBtn.addEventListener("click", () => {
+      namesInput.value = "";
+      groupsEl.innerHTML = "";
+      roundInfoEl.textContent = "Ingen grupper laget ennå.";
+      warningEl.textContent = "";
+      deleteCookie(COOKIE_NAMES);
+      resetMeta();
+      showStatus("Navn og runder er slettet.");
+    });
+
+    initializeFromStorage();
+  </script>
+</body>
+</html>
